@@ -4,11 +4,13 @@ import { NavLink } from 'react-router-dom'
 function Header() {
   return (
     <header className="site-header">
-      <div className="brand">FindMyJabs</div>
+      <button id="logo" className="logo" onClick={() => window.location.href = '/'}>
+        FindMyJabs
+      </button>
       <nav aria-label="Primary">
         <ul className="nav-links">
-          <li><NavLink to="/">Form</NavLink></li>
-          <li><NavLink to="/results">Next Page</NavLink></li>
+          <li><NavLink to="/about">About</NavLink></li>
+          <li><NavLink to="/account">My Account</NavLink></li>
         </ul>
       </nav>
     </header>

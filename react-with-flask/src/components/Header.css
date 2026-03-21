@@ -33,6 +33,13 @@
   border-radius: 6px;
 }
 
+.logo {
+  height: 20px;
+  background-color: transparent;
+  color: rgb(32, 32, 32);
+  font-size: 1.2rem;
+  border: none;
+}
 .nav-links a:hover {
   background: #f3f4f6;
 }
