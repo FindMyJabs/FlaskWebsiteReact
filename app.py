@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
 from wtforms.validators import DataRequired, Length
@@ -24,6 +24,16 @@ class OpinionForm(FlaskForm):
 @app.route('/')
 def galleryPage():
     return render_template('index.html',technologies = technologies)
+
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/technologies', methods=['GET'])
+def api_technologies():
+    return jsonify(technologies)
 
 @app.route('/results/<int:techId>',methods=['GET','POST'])
 def singleProductPage(techId):
