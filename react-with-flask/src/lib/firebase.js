@@ -34,109 +34,25 @@ if (hasFirebaseConfig) {
   firestore = getFirestore(firebaseApp)
 }
 
-export const defaultFormConfig = {
+export const createEmptyFormConfig = () => ({
   type: 'decisionTree',
-  startNodeId: 'start',
-  nodes: {
-    start: {
-      id: 'start',
-      prompt: 'How old are you?',
-      nodeType: 'choice',
-      options: [
-        { id: 'under18', label: 'Under 18', nextNodeId: 'school' },
-        { id: '18to64', label: '18 to 64', nextNodeId: 'health' },
-        { id: '65plus', label: '65 or over', nextNodeId: 'flu' },
-      ],
-    },
-    school: {
-      id: 'school',
-      prompt: 'Have you completed your school vaccinations?',
-      nodeType: 'choice',
-      options: [
-        { id: 'yes_school', label: 'Yes, all done', nextNodeId: 'result_uptodate' },
-        { id: 'unsure_school', label: "I'm not sure", nextNodeId: 'result_check_records' },
-      ],
-    },
-    health: {
-      id: 'health',
-      prompt: 'Do you have any underlying health condition?',
-      nodeType: 'choice',
-      options: [
-        { id: 'healthy', label: 'No, I am healthy', nextNodeId: 'mmr' },
-        { id: 'condition', label: 'Yes, I have a condition', nextNodeId: 'covid' },
-      ],
-    },
-    flu: {
-      id: 'flu',
-      prompt: 'Have you had your seasonal flu vaccination?',
-      nodeType: 'choice',
-      options: [
-        { id: 'flu_yes', label: "Yes, I've had both", nextNodeId: 'pneumo' },
-        { id: 'flu_no', label: 'No, I missed them', nextNodeId: 'result_eligible' },
-      ],
-    },
-    mmr: {
-      id: 'mmr',
-      prompt: 'Are you up to date with MMR?',
-      nodeType: 'choice',
-      options: [
-        { id: 'mmr_yes', label: "Yes, I've had two doses", nextNodeId: 'result_uptodate' },
-        { id: 'mmr_recent', label: 'Within the last 6 months', nextNodeId: 'result_uptodate' },
-      ],
-    },
-    covid: {
-      id: 'covid',
-      prompt: 'When was your last COVID-19 booster?',
-      nodeType: 'choice',
-      options: [
-        { id: 'covid_recent', label: 'Within the last 6 months', nextNodeId: 'result_uptodate' },
-        { id: 'covid_unknown', label: "No / I don't know", nextNodeId: 'result_consult_gp' },
-      ],
-    },
-    pneumo: {
-      id: 'pneumo',
-      prompt: "Have you had the 'Pneumo' vaccine (PPV)?",
-      nodeType: 'choice',
-      options: [
-        { id: 'pneumo_yes', label: "Yes, I've had it", nextNodeId: 'result_protected' },
-        { id: 'pneumo_no', label: 'No, never heard of it', nextNodeId: 'result_eligible' },
-      ],
-    },
-    result_uptodate: {
-      id: 'result_uptodate',
-      prompt: 'Status: You are up to date.',
-      nodeType: 'result',
-    },
-    result_check_records: {
-      id: 'result_check_records',
-      prompt: 'Action required: Check your records.',
-      nodeType: 'result',
-    },
-    result_consult_gp: {
-      id: 'result_consult_gp',
-      prompt: 'Consult your GP for the next step.',
-      nodeType: 'result',
-    },
-    result_eligible: {
-      id: 'result_eligible',
-      prompt: 'You may be eligible for a vaccination.',
-      nodeType: 'result',
-    },
-    result_protected: {
-      id: 'result_protected',
-      prompt: 'Excellent! You are fully protected.',
-      nodeType: 'result',
-    },
-  },
-}
+  startNodeId: '',
+  nodes: {},
+})
 
 const formConfigRef = () => doc(firestore, 'adminSettings', 'formConfig')
 
 const normalizeDecisionTreeConfig = (config = {}) => {
   if (config?.type === 'decisionTree' && config?.nodes && typeof config.nodes === 'object') {
+    const nodeIds = Object.keys(config.nodes)
+    const normalizedStartNodeId =
+      config.startNodeId && config.nodes[config.startNodeId]
+        ? config.startNodeId
+        : nodeIds[0] || ''
+
     return {
       type: 'decisionTree',
-      startNodeId: config.startNodeId || defaultFormConfig.startNodeId,
+      startNodeId: normalizedStartNodeId,
       nodes: config.nodes,
     }
   }
@@ -147,7 +63,7 @@ const normalizeDecisionTreeConfig = (config = {}) => {
   )
 
   if (pageKeys.length === 0) {
-    return defaultFormConfig
+    return createEmptyFormConfig()
   }
 
   const nodes = {}
@@ -185,25 +101,25 @@ const normalizeDecisionTreeConfig = (config = {}) => {
 
 export const getFormConfig = async () => {
   if (!firestore) {
-    return defaultFormConfig
+    return createEmptyFormConfig()
   }
 
   try {
     const snapshot = await getDoc(formConfigRef())
     if (!snapshot.exists()) {
-      return defaultFormConfig
+      return createEmptyFormConfig()
     }
 
     return normalizeDecisionTreeConfig(snapshot.data())
   } catch (error) {
     console.error('Error fetching form config:', error)
-    return defaultFormConfig
+    return createEmptyFormConfig()
   }
 }
 
 export const subscribeToFormConfig = (onConfig, onError) => {
   if (!firestore) {
-    onConfig(defaultFormConfig)
+    onConfig(createEmptyFormConfig())
     return () => {}
   }
 
@@ -211,7 +127,7 @@ export const subscribeToFormConfig = (onConfig, onError) => {
     formConfigRef(),
     (snapshot) => {
       if (!snapshot.exists()) {
-        onConfig(defaultFormConfig)
+        onConfig(createEmptyFormConfig())
         return
       }
 

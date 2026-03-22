@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  defaultFormConfig,
+  createEmptyFormConfig,
   getFormConfig,
   hasFirebaseConfig,
   saveFormConfig,
@@ -8,7 +8,7 @@ import {
 import { VaccinesManager } from './VaccinesPage'
 
 function AdminPage() {
-  const [formConfig, setFormConfig] = useState(defaultFormConfig)
+  const [formConfig, setFormConfig] = useState(() => createEmptyFormConfig())
   const [loading, setLoading] = useState(true)
   const [savingConfig, setSavingConfig] = useState(false)
   const [status, setStatus] = useState('')

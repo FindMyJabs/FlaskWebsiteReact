@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { defaultFormConfig, hasFirebaseConfig, subscribeToFormConfig, subscribeToVaccines } from '../lib/firebase'
+import { createEmptyFormConfig, hasFirebaseConfig, subscribeToFormConfig, subscribeToVaccines } from '../lib/firebase'
 
 function FormPage() {
   const navigate = useNavigate()
   const [errors, setErrors] = useState({})
   const [vaccines, setVaccines] = useState([])
   const [vaccinesLoading, setVaccinesLoading] = useState(true)
-  const [formConfig, setFormConfig] = useState(defaultFormConfig)
-  const [currentNodeId, setCurrentNodeId] = useState(defaultFormConfig.startNodeId)
+  const [formConfig, setFormConfig] = useState(() => createEmptyFormConfig())
+  const [currentNodeId, setCurrentNodeId] = useState('')
   const [nodeTrail, setNodeTrail] = useState([])
   const [history, setHistory] = useState([])
   const [answers, setAnswers] = useState({})
@@ -27,18 +27,22 @@ function FormPage() {
   useEffect(() => {
     const unsubscribe = subscribeToFormConfig(
       (config) => {
-        const nextConfig = config || defaultFormConfig
+        const nextConfig = config || createEmptyFormConfig()
         const nextNodes = nextConfig.nodes || {}
+        const fallbackStartNodeId = Object.keys(nextNodes)[0] || ''
 
         setFormConfig(nextConfig)
         setCurrentNodeId((previousNodeId) =>
-          previousNodeId && nextNodes[previousNodeId] ? previousNodeId : nextConfig.startNodeId,
+          previousNodeId && nextNodes[previousNodeId]
+            ? previousNodeId
+            : nextConfig.startNodeId || fallbackStartNodeId,
         )
         setNodeTrail((previousTrail) => previousTrail.filter((nodeId) => Boolean(nextNodes[nodeId])))
       },
       () => {
-        setFormConfig(defaultFormConfig)
-        setCurrentNodeId(defaultFormConfig.startNodeId)
+        const emptyConfig = createEmptyFormConfig()
+        setFormConfig(emptyConfig)
+        setCurrentNodeId(emptyConfig.startNodeId)
         setNodeTrail([])
       },
     )
