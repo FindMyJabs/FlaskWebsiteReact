@@ -1,302 +1,298 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { hasFirebaseConfig, saveFormSubmission, upsertFormDraft } from '../lib/firebase'
+import { defaultFormConfig, getAllVaccines, getFormConfig, hasFirebaseConfig } from '../lib/firebase'
 
 function FormPage() {
   const navigate = useNavigate()
-  const reactId = useId()
-  const [step, setStep] = useState(1)
   const [errors, setErrors] = useState({})
-  const [saveStatus, setSaveStatus] = useState('')
-  const [firebaseSyncEnabled, setFirebaseSyncEnabled] = useState(hasFirebaseConfig)
-  const sessionId = useMemo(() => `session-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`, [reactId])
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    postcode: '',
-    city: '',
-    country: '',
-    preferredVaccine: '',
-    contactByEmail: true,
-    consent: false,
-  })
+  const [vaccines, setVaccines] = useState([])
+  const [vaccinesLoading, setVaccinesLoading] = useState(true)
+  const [formConfig, setFormConfig] = useState(defaultFormConfig)
+  const [currentNodeId, setCurrentNodeId] = useState(defaultFormConfig.startNodeId)
+  const [nodeTrail, setNodeTrail] = useState([])
+  const [history, setHistory] = useState([])
+  const [answers, setAnswers] = useState({})
+  const [inputDraft, setInputDraft] = useState({})
 
-  const updateField = (field, value) => {
-    setFormData((previous) => ({
+  const nodes = formConfig.nodes || {}
+  const currentNode = nodes[currentNodeId] || null
+
+  const setInputField = (fieldKey, value) => {
+    setInputDraft((previous) => ({
       ...previous,
-      [field]: value,
+      [fieldKey]: value,
     }))
   }
 
-  const validateStep = (stepToValidate) => {
-    const nextErrors = {}
+  useEffect(() => {
+    const loadFormConfig = async () => {
+      const config = await getFormConfig()
+      setFormConfig(config)
+      setCurrentNodeId(config.startNodeId)
+      setNodeTrail([])
+      setHistory([])
+      setAnswers({})
+      setInputDraft({})
+      setErrors({})
+    }
 
-    if (stepToValidate === 1) {
-      if (!formData.firstName.trim()) nextErrors.firstName = 'First name is required.'
-      if (!formData.lastName.trim()) nextErrors.lastName = 'Last name is required.'
-      if (!formData.email.trim()) {
-        nextErrors.email = 'Email is required.'
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
-        nextErrors.email = 'Please enter a valid email address.'
+    loadFormConfig()
+  }, [])
+
+  useEffect(() => {
+    const loadVaccines = async () => {
+      if (!hasFirebaseConfig) {
+        setVaccinesLoading(false)
+        return
+      }
+
+      try {
+        const loadedVaccines = await getAllVaccines()
+        setVaccines(loadedVaccines)
+      } catch (error) {
+        console.error('Error loading vaccines:', error)
+        setVaccines([])
+      } finally {
+        setVaccinesLoading(false)
       }
     }
 
-    if (stepToValidate === 2) {
-      if (!formData.postcode.trim()) nextErrors.postcode = 'Postcode is required.'
-      if (!formData.city.trim()) nextErrors.city = 'City is required.'
-      if (!formData.country.trim()) nextErrors.country = 'Country is required.'
-    }
+    loadVaccines()
+  }, [])
 
-    if (stepToValidate === 3) {
-      if (!formData.preferredVaccine.trim()) nextErrors.preferredVaccine = 'Select a vaccine preference.'
-      if (!formData.consent) nextErrors.consent = 'You need to accept consent to continue.'
-    }
+  const validateInputNode = (node) => {
+    const nextErrors = {}
+
+    ;(node.fields || []).forEach((field) => {
+      const value = String(inputDraft[field.key] || '').trim()
+      if (!value) {
+        nextErrors[field.key] = `${field.label || field.key} is required.`
+      }
+    })
 
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
 
-  const nextStep = () => {
-    if (!validateStep(step)) return
-    setStep((previous) => Math.min(previous + 1, 3))
-  }
-
-  const previousStep = () => {
-    setErrors({})
-    setStep((previous) => Math.max(previous - 1, 1))
-  }
-
-  const handleSubmit = (event) => {
-    event.preventDefault()
-
-    if (!validateStep(3)) return
-
-    const payload = {
-      ...formData,
-      firstName: formData.firstName.trim(),
-      lastName: formData.lastName.trim(),
-      email: formData.email.trim(),
-      postcode: formData.postcode.trim(),
-      city: formData.city.trim(),
-      country: formData.country.trim(),
-      preferredVaccine: formData.preferredVaccine.trim(),
-    }
-
-    if (firebaseSyncEnabled) {
-      saveFormSubmission(sessionId, payload)
-        .then(() => {
-          setSaveStatus('Form submitted to Firebase.')
-        })
-        .catch(() => {
-          setSaveStatus('Unable to submit to Firebase. Continuing locally.')
-        })
-    }
-
+  const finalizeToResults = (nextHistory, nextAnswers, finalNode = null) => {
     navigate('/results', {
       state: {
-        ...payload,
-        name: `${payload.firstName} ${payload.lastName}`.trim(),
-        firebaseSyncEnabled,
-        sessionId,
+        treeAnswers: nextAnswers,
+        treeHistory: nextHistory,
+        finalNode,
+        formConfig,
       },
     })
   }
 
-  useEffect(() => {
-    if (!firebaseSyncEnabled) {
-      return undefined
+  const goToNode = (nextNodeId, answerEntry) => {
+    const nextHistory = answerEntry ? [...history, answerEntry] : history
+    const nextAnswers = answerEntry
+      ? {
+          ...answers,
+          [answerEntry.key]: answerEntry.value,
+        }
+      : answers
+
+    setHistory(nextHistory)
+    setAnswers(nextAnswers)
+    setErrors({})
+    setInputDraft({})
+
+    if (nextNodeId && nodes[nextNodeId]) {
+      setNodeTrail((previous) => [...previous, currentNodeId])
+      setCurrentNodeId(nextNodeId)
+      return
     }
 
-    if (!hasFirebaseConfig) {
-      return undefined
+    finalizeToResults(nextHistory, nextAnswers)
+  }
+
+  const handleChoice = (option) => {
+    if (!currentNode) {
+      return
     }
 
-    const timeout = setTimeout(() => {
-      upsertFormDraft(sessionId, {
-        ...formData,
-        currentStep: step,
-      })
-        .then(() => {
-          setSaveStatus('Draft saved live to Firebase.')
-        })
-        .catch(() => {
-          setSaveStatus('Live save failed. Check Firebase credentials and network.')
-        })
-    }, 700)
+    goToNode(option.nextNodeId, {
+      key: `${currentNode.id}.choice`,
+      label: currentNode.prompt,
+      value: option.label,
+      nodeId: currentNode.id,
+      nextNodeId: option.nextNodeId || '',
+    })
+  }
 
-    return () => {
-      clearTimeout(timeout)
+  const handleInputNext = () => {
+    if (!currentNode) {
+      return
     }
-  }, [firebaseSyncEnabled, formData, sessionId, step])
+
+    if (!validateInputNode(currentNode)) {
+      return
+    }
+
+    const newEntries = (currentNode.fields || []).map((field) => ({
+      key: `${currentNode.id}.${field.key}`,
+      label: field.label || field.key,
+      value: String(inputDraft[field.key] || '').trim(),
+      nodeId: currentNode.id,
+      nextNodeId: currentNode.nextNodeId || '',
+      inputType: field.inputType || 'text',
+    }))
+
+    const nextHistory = [...history, ...newEntries]
+    const nextAnswers = { ...answers }
+    newEntries.forEach((entry) => {
+      nextAnswers[entry.key] = entry.value
+    })
+
+    setHistory(nextHistory)
+    setAnswers(nextAnswers)
+    setErrors({})
+    setInputDraft({})
+
+    if (currentNode.nextNodeId && nodes[currentNode.nextNodeId]) {
+      setNodeTrail((previous) => [...previous, currentNodeId])
+      setCurrentNodeId(currentNode.nextNodeId)
+      return
+    }
+
+    finalizeToResults(nextHistory, nextAnswers)
+  }
+
+  const restartFlow = () => {
+    setCurrentNodeId(formConfig.startNodeId)
+    setNodeTrail([])
+    setHistory([])
+    setAnswers({})
+    setInputDraft({})
+    setErrors({})
+  }
+
+  const goToPreviousNode = () => {
+    if (nodeTrail.length === 0) {
+      return
+    }
+
+    const previousNodeId = nodeTrail[nodeTrail.length - 1]
+    setNodeTrail((previous) => previous.slice(0, -1))
+    setCurrentNodeId(previousNodeId)
+    setInputDraft({})
+    setErrors({})
+  }
+
+  const renderInputField = (field) => {
+    const value = inputDraft[field.key] || ''
+    if (field.inputType === 'vaccine') {
+      return (
+        <select
+          id={`${currentNode.id}-${field.key}`}
+          value={value}
+          onChange={(event) => setInputField(field.key, event.target.value)}
+          style={{ padding: 10 }}
+        >
+          <option value="">Select one</option>
+          {vaccinesLoading ? (
+            <option value="">Loading vaccines...</option>
+          ) : vaccines.length === 0 ? (
+            <option value="">No vaccines available</option>
+          ) : (
+            vaccines.map((vaccine) => (
+              <option key={vaccine.id} value={vaccine.name || vaccine.id}>
+                {vaccine.name || vaccine.id}
+              </option>
+            ))
+          )}
+        </select>
+      )
+    }
+
+    return (
+      <input
+        id={`${currentNode.id}-${field.key}`}
+        value={value}
+        onChange={(event) => setInputField(field.key, event.target.value)}
+        style={{ padding: 10 }}
+      />
+    )
+  }
+
+  if (!currentNode) {
+    return (
+      <main className="nhs-page" style={{ maxWidth: 720 }}>
+        <h1>FindMyJabs</h1>
+        <p>No start node found in decision tree configuration.</p>
+      </main>
+    )
+  }
 
   return (
-    <main style={{ maxWidth: 720, margin: '40px auto', padding: '0 20px' }}>
+    <main className="nhs-page" style={{ maxWidth: 720 }}>
       <h1>FindMyJabs</h1>
-      <p>Step {step} of 3. Complete each section to continue.</p>
+      <p>Decision node: {currentNode.id} ({currentNode.nodeType})</p>
       <p style={{ marginTop: 8, color: '#52525b' }}>
         {hasFirebaseConfig
-          ? `Firebase live sync is ${firebaseSyncEnabled ? 'enabled' : 'disabled'}.`
-          : 'Firebase is not configured yet. Form works locally and can be connected later.'}
+          ? 'Decision tree and vaccines are loaded from Firebase.'
+          : 'Firebase is not configured yet.'}
       </p>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14, marginTop: 24 }}>
-        {step === 1 && (
-          <>
-            <label htmlFor="firstName" style={{ display: 'grid', gap: 6 }}>
-              First name
-              <input
-                id="firstName"
-                value={formData.firstName}
-                onChange={(event) => updateField('firstName', event.target.value)}
-                placeholder="Jane"
-                style={{ padding: 10 }}
-              />
-              {errors.firstName && <span style={{ color: 'crimson' }}>{errors.firstName}</span>}
-            </label>
+      <section style={{ display: 'grid', gap: 14, marginTop: 24 }}>
+        <h2 style={{ margin: 0 }}>{currentNode.prompt}</h2>
 
-            <label htmlFor="lastName" style={{ display: 'grid', gap: 6 }}>
-              Last name
-              <input
-                id="lastName"
-                value={formData.lastName}
-                onChange={(event) => updateField('lastName', event.target.value)}
-                placeholder="Doe"
-                style={{ padding: 10 }}
-              />
-              {errors.lastName && <span style={{ color: 'crimson' }}>{errors.lastName}</span>}
-            </label>
-
-            <label htmlFor="email" style={{ display: 'grid', gap: 6 }}>
-              Email
-              <input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(event) => updateField('email', event.target.value)}
-                placeholder="jane@example.com"
-                style={{ padding: 10 }}
-              />
-              {errors.email && <span style={{ color: 'crimson' }}>{errors.email}</span>}
-            </label>
-          </>
-        )}
-
-        {step === 2 && (
-          <>
-            <label htmlFor="postcode" style={{ display: 'grid', gap: 6 }}>
-              Postcode
-              <input
-                id="postcode"
-                value={formData.postcode}
-                onChange={(event) => updateField('postcode', event.target.value)}
-                placeholder="SW1A 1AA"
-                style={{ padding: 10 }}
-              />
-              {errors.postcode && <span style={{ color: 'crimson' }}>{errors.postcode}</span>}
-            </label>
-
-            <label htmlFor="city" style={{ display: 'grid', gap: 6 }}>
-              City
-              <input
-                id="city"
-                value={formData.city}
-                onChange={(event) => updateField('city', event.target.value)}
-                placeholder="London"
-                style={{ padding: 10 }}
-              />
-              {errors.city && <span style={{ color: 'crimson' }}>{errors.city}</span>}
-            </label>
-
-            <label htmlFor="country" style={{ display: 'grid', gap: 6 }}>
-              Country
-              <input
-                id="country"
-                value={formData.country}
-                onChange={(event) => updateField('country', event.target.value)}
-                placeholder="United Kingdom"
-                style={{ padding: 10 }}
-              />
-              {errors.country && <span style={{ color: 'crimson' }}>{errors.country}</span>}
-            </label>
-          </>
-        )}
-
-        {step === 3 && (
-          <>
-            <label htmlFor="preferredVaccine" style={{ display: 'grid', gap: 6 }}>
-              Preferred vaccine
-              <select
-                id="preferredVaccine"
-                value={formData.preferredVaccine}
-                onChange={(event) => updateField('preferredVaccine', event.target.value)}
-                style={{ padding: 10 }}
+        {currentNode.nodeType === 'choice' ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(currentNode.options || []).map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => handleChoice(option)}
+                style={{ padding: '10px 14px', textAlign: 'left' }}
               >
-                <option value="">Select one</option>
-                <option value="Pfizer">Pfizer</option>
-                <option value="Moderna">Moderna</option>
-                <option value="No preference">No preference</option>
-              </select>
-              {errors.preferredVaccine && <span style={{ color: 'crimson' }}>{errors.preferredVaccine}</span>}
-            </label>
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-            <label htmlFor="contactByEmail" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                id="contactByEmail"
-                type="checkbox"
-                checked={formData.contactByEmail}
-                onChange={(event) => updateField('contactByEmail', event.target.checked)}
-              />
-              Contact me by email
-            </label>
-
-            <label htmlFor="consent" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                id="consent"
-                type="checkbox"
-                checked={formData.consent}
-                onChange={(event) => updateField('consent', event.target.checked)}
-              />
-              I agree that this information can be used to process my request.
-            </label>
-            {errors.consent && <span style={{ color: 'crimson' }}>{errors.consent}</span>}
+        {currentNode.nodeType === 'input' ? (
+          <>
+            {(currentNode.fields || []).map((field) => (
+              <label key={field.key} htmlFor={`${currentNode.id}-${field.key}`} style={{ display: 'grid', gap: 6 }}>
+                {field.label || field.key}
+                {renderInputField(field)}
+                {errors[field.key] && <span style={{ color: 'crimson' }}>{errors[field.key]}</span>}
+              </label>
+            ))}
+            <button type="button" onClick={handleInputNext} style={{ width: 180, padding: '10px 14px' }}>
+              Continue
+            </button>
           </>
-        )}
+        ) : null}
 
-        <label htmlFor="firebaseSyncEnabled" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            id="firebaseSyncEnabled"
-            type="checkbox"
-            checked={firebaseSyncEnabled}
-            onChange={(event) => setFirebaseSyncEnabled(event.target.checked)}
-            disabled={!hasFirebaseConfig}
-          />
-          Enable live Firebase sync
-        </label>
-
-        <p style={{ minHeight: 24, color: '#52525b' }}>{saveStatus}</p>
+        {currentNode.nodeType === 'result' ? (
+          <button
+            type="button"
+            onClick={() => finalizeToResults(history, answers, currentNode)}
+            style={{ width: 220, padding: '10px 14px' }}
+          >
+            View Result Summary
+          </button>
+        ) : null}
 
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             type="button"
-            onClick={previousStep}
-            disabled={step === 1}
-            style={{ width: 160, padding: '10px 14px' }}
+            onClick={goToPreviousNode}
+            disabled={nodeTrail.length === 0}
+            style={{ width: 170, padding: '10px 14px' }}
           >
-            Previous
+            Previous question
           </button>
-
-          {step < 3 ? (
-            <button type="button" onClick={nextStep} style={{ width: 160, padding: '10px 14px' }}>
-              Next
-            </button>
-          ) : (
-            <button type="submit" style={{ width: 200, padding: '10px 14px' }}>
-              Submit form
-            </button>
-          )}
+          <button type="button" onClick={restartFlow} style={{ width: 160, padding: '10px 14px' }}>
+            Restart Flow
+          </button>
         </div>
-      </form>
+      </section>
     </main>
   )
 }

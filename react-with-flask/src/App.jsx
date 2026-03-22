@@ -6,6 +6,7 @@ import ResultsPage from './pages/ResultsPage'
 import AboutPage from './pages/AboutPage'
 import MyAccount from './pages/MyAccount'
 import HomePage from './pages/HomePage'
+import AdminPage from './pages/AdminPage'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/results" element={<ResultsPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/account" element={<MyAccount />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
