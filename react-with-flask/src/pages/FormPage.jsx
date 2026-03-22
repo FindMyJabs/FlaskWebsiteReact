@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { defaultFormConfig, getAllVaccines, getFormConfig, hasFirebaseConfig } from '../lib/firebase'
+import { defaultFormConfig, getAllVaccines, hasFirebaseConfig, subscribeToFormConfig } from '../lib/firebase'
 
 function FormPage() {
   const navigate = useNavigate()
@@ -25,18 +25,27 @@ function FormPage() {
   }
 
   useEffect(() => {
-    const loadFormConfig = async () => {
-      const config = await getFormConfig()
-      setFormConfig(config)
-      setCurrentNodeId(config.startNodeId)
-      setNodeTrail([])
-      setHistory([])
-      setAnswers({})
-      setInputDraft({})
-      setErrors({})
-    }
+    const unsubscribe = subscribeToFormConfig(
+      (config) => {
+        const nextConfig = config || defaultFormConfig
+        const nextNodes = nextConfig.nodes || {}
 
-    loadFormConfig()
+        setFormConfig(nextConfig)
+        setCurrentNodeId((previousNodeId) =>
+          previousNodeId && nextNodes[previousNodeId] ? previousNodeId : nextConfig.startNodeId,
+        )
+        setNodeTrail((previousTrail) => previousTrail.filter((nodeId) => Boolean(nextNodes[nodeId])))
+      },
+      () => {
+        setFormConfig(defaultFormConfig)
+        setCurrentNodeId(defaultFormConfig.startNodeId)
+        setNodeTrail([])
+      },
+    )
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
