@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { addVaccine, deleteVaccineById, getAllVaccines, hasFirebaseConfig, updateVaccine } from '../lib/firebase'
+import { addVaccine, deleteVaccineById, hasFirebaseConfig, subscribeToVaccines, updateVaccine } from '../lib/firebase'
 
 export function VaccinesManager({ embedded = false }) {
   const [vaccines, setVaccines] = useState([])
@@ -7,31 +7,32 @@ export function VaccinesManager({ embedded = false }) {
   const [status, setStatus] = useState('')
   const [newVaccine, setNewVaccine] = useState({ name: '', data: '', description: '' })
 
-  const loadVaccines = async () => {
+  useEffect(() => {
     if (!hasFirebaseConfig) {
       setLoading(false)
-      return
+      return () => {}
     }
 
-    try {
-      const vaccineList = await getAllVaccines()
-      setVaccines(vaccineList)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Failed to load vaccines')
-    } finally {
-      setLoading(false)
-    }
-  }
+    const unsubscribe = subscribeToVaccines(
+      (vaccineList) => {
+        setVaccines(vaccineList)
+        setLoading(false)
+      },
+      (error) => {
+        setStatus(error instanceof Error ? error.message : 'Failed to load vaccines')
+        setLoading(false)
+      },
+    )
 
-  useEffect(() => {
-    loadVaccines()
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   const handleUpdateVaccine = async (id, payload) => {
     try {
       await updateVaccine(id, payload)
       setStatus('Vaccine updated.')
-      await loadVaccines()
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to update vaccine')
     }
@@ -41,7 +42,6 @@ export function VaccinesManager({ embedded = false }) {
     try {
       await deleteVaccineById(id)
       setStatus('Vaccine deleted.')
-      await loadVaccines()
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to delete vaccine')
     }
@@ -57,7 +57,6 @@ export function VaccinesManager({ embedded = false }) {
       await addVaccine(newVaccine)
       setNewVaccine({ name: '', data: '', description: '' })
       setStatus('Vaccine added.')
-      await loadVaccines()
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to add vaccine')
     }
